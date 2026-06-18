@@ -8,6 +8,8 @@ import "@openzeppelin/utils/ReentrancyGuard.sol";
 import "@openzeppelin/utils/cryptography/MerkleProof.sol";
 import "@chainlink/src/v0.8/vrf/VRFConsumerBaseV2.sol";
 import "@chainlink/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+import "@openzeppelin/utils/Base64.sol";
+import "@openzeppelin/utils/Strings.sol";
 import "./interfaces/INftLaunchpad.sol";
 import "./svg/SvgGenerator.sol";
 
@@ -60,11 +62,12 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
     mapping(address => uint256) public referralRewards;
 
     // VRF Config
-    VRFCoordinatorV2Interface public vrfCoordinator;
-    uint64 public subscriptionId;
-    bytes32 public keyHash;
-    uint32 public callbackGasLimit;
-    uint16 public requestConfirmations;
+    VRFCoordinatorV2Interface private vrfCoordinator;
+    uint64 private subscriptionId;
+    bytes32 private keyHash;
+    uint32 private callbackGasLimit;
+    uint16 private requestConfirmations;
+    bool public revealRequested;
 
     constructor(
         string memory name,
@@ -99,6 +102,30 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
         }
         
         emit PhaseChanged(oldPhase, phase);
+    }
+
+    function requestReveal(bool force) external onlyOwner {
+        if (revealRequested) revert RevealAlreadyRequested();
+        require(force || totalSupply() == config.maxSupply, "Not fully minted");
+        
+        uint256 requestId = vrfCoordinator.requestRandomWords(
+            keyHash,
+            subscriptionId,
+            requestConfirmations,
+            callbackGasLimit,
+            1
+        );
+        vrfRequestId = requestId;
+        revealRequested = true;
+        emit RevealRequested(requestId);
+    }
+
+    function setBaseURI(string calldata uri) external onlyOwner {
+        baseURI = uri;
+    }
+
+    function setCallbackGasLimit(uint32 limit) external onlyOwner {
+        callbackGasLimit = limit;
     }
 
     // --- Admin Merkle Setup ---
@@ -150,15 +177,145 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
         revert WrongPhase();
     }
 
+    // --- Minting ---
+
+    function mintOg(uint256 qty, bytes32[] calldata proof) external payable nonReentrant {
+        if (currentPhase != MintPhase.OG) revert WrongPhase();
+        if (!_verifyOg(msg.sender, proof)) revert InvalidProof();
+        if (ogMinted[msg.sender] + qty > config.ogMaxPerWallet) revert MaxPerWalletExceeded();
+        if (totalSupply() + qty > config.maxSupply) revert MaxSupplyExceeded();
+        
+        uint256 required = config.ogPrice * qty;
+        if (msg.value < required) revert InsufficientPayment();
+
+        ogMinted[msg.sender] += uint8(qty);
+        _safeMint(msg.sender, qty);
+
+        if (msg.value > required) {
+            (bool ok, ) = payable(msg.sender).call{value: msg.value - required}("");
+            if (!ok) revert TransferFailed();
+        }
+
+        emit Minted(msg.sender, _nextTokenId() - qty, qty, MintPhase.OG);
+    }
+
+    function mintWl(uint256 qty, bytes32[] calldata proof) external payable nonReentrant {
+        if (currentPhase != MintPhase.ALLOWLIST) revert WrongPhase();
+        if (!_verifyWl(msg.sender, proof)) revert InvalidProof();
+        if (wlMinted[msg.sender] + qty > config.wlMaxPerWallet) revert MaxPerWalletExceeded();
+        if (totalSupply() + qty > config.maxSupply) revert MaxSupplyExceeded();
+        
+        uint256 required = config.wlPrice * qty;
+        if (msg.value < required) revert InsufficientPayment();
+
+        wlMinted[msg.sender] += uint8(qty);
+        _safeMint(msg.sender, qty);
+
+        if (msg.value > required) {
+            (bool ok, ) = payable(msg.sender).call{value: msg.value - required}("");
+            if (!ok) revert TransferFailed();
+        }
+
+        emit Minted(msg.sender, _nextTokenId() - qty, qty, MintPhase.ALLOWLIST);
+    }
+
+    function mintPublic(uint256 qty) external payable nonReentrant {
+        if (currentPhase != MintPhase.PUBLIC) revert WrongPhase();
+        if (publicMinted[msg.sender] + qty > config.publicMaxPerWallet) revert MaxPerWalletExceeded();
+        if (totalSupply() + qty > config.maxSupply) revert MaxSupplyExceeded();
+        
+        uint256 required = _currentPrice() * qty;
+        if (msg.value < required) revert InsufficientPayment();
+
+        publicMinted[msg.sender] += uint8(qty);
+        _safeMint(msg.sender, qty);
+
+        if (msg.value > required) {
+            (bool ok, ) = payable(msg.sender).call{value: msg.value - required}("");
+            if (!ok) revert TransferFailed();
+        }
+
+        emit Minted(msg.sender, _nextTokenId() - qty, qty, MintPhase.PUBLIC);
+    }
+
+    function mintWithReferral(uint256 qty, bytes32[] calldata proof, address referrer) external payable nonReentrant {
+        if (currentPhase != MintPhase.ALLOWLIST) revert WrongPhase();
+        if (!_verifyWl(msg.sender, proof)) revert InvalidProof();
+        if (wlMinted[msg.sender] + qty > config.wlMaxPerWallet) revert MaxPerWalletExceeded();
+        if (totalSupply() + qty > config.maxSupply) revert MaxSupplyExceeded();
+        
+        uint256 required = config.wlPrice * qty;
+        if (msg.value < required) revert InsufficientPayment();
+
+        wlMinted[msg.sender] += uint8(qty);
+        
+        if (referrer != address(0) && referrer != msg.sender) {
+            uint256 reward = (config.wlPrice * qty * 5) / 100;
+            referralRewards[referrer] += reward;
+            emit ReferralRewarded(referrer, msg.sender, reward);
+        }
+
+        _safeMint(msg.sender, qty);
+
+        if (msg.value > required) {
+            (bool ok, ) = payable(msg.sender).call{value: msg.value - required}("");
+            if (!ok) revert TransferFailed();
+        }
+
+        emit Minted(msg.sender, _nextTokenId() - qty, qty, MintPhase.ALLOWLIST);
+    }
+
+    function claimReferralRewards() external nonReentrant {
+        uint256 amount = referralRewards[msg.sender];
+        require(amount > 0);
+        referralRewards[msg.sender] = 0;
+        
+        (bool ok, ) = payable(msg.sender).call{value: amount}("");
+        if (!ok) revert TransferFailed();
+        
+        emit Withdrawn(msg.sender, amount);
+    }
+
     function _startTokenId() internal pure override returns (uint256) {
         return 1;
+    }
+
+    function tokenURI(uint256 tokenId) public view virtual override(ERC721A) returns (string memory) {
+        if (!_exists(tokenId)) revert URIQueryForNonexistentToken();
+
+        if (!revealed) {
+            string memory svgDataUri = SvgGenerator.generate(tokenId, address(this));
+            
+            string memory json = string.concat(
+                '{"name":"Token #',
+                Strings.toString(tokenId),
+                ' [Unrevealed]","image":"',
+                svgDataUri,
+                '"}'
+            );
+            
+            return string.concat(
+                "data:application/json;base64,",
+                Base64.encode(bytes(json))
+            );
+        }
+
+        string memory _baseURIStr = baseURI;
+        if (bytes(_baseURIStr).length == 0) {
+            return "";
+        }
+
+        uint256 shiftedId = (tokenId - _startTokenId() + randomOffset) % config.maxSupply;
+        return string.concat(_baseURIStr, Strings.toString(shiftedId), ".json");
     }
 
     function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721A, ERC2981) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 
-    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
-        // TODO: Implement VRF logic
+    function fulfillRandomWords(uint256 /* requestId */, uint256[] memory randomWords) internal override {
+        randomOffset = randomWords[0] % config.maxSupply;
+        revealed = true;
+        emit RevealFulfilled(randomOffset);
     }
 }

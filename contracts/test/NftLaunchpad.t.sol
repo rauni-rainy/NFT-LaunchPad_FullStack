@@ -76,4 +76,28 @@ contract NftLaunchpadPriceTest is Test {
         uint256 pricePastEnd = launchpad.currentPrice();
         assertEq(pricePastEnd, 0.1 ether, "Price past end should remain bounded at 0.1 ether");
     }
+
+    function test_SvgGeneration() public {
+        launchpad.setPhase(INftLaunchpad.MintPhase.PUBLIC);
+        
+        vm.deal(address(this), 10 ether);
+
+        // Mint 2 tokens
+        launchpad.mintPublic{value: 2 ether}(2);
+
+        string memory uri1 = launchpad.tokenURI(1);
+        string memory uri2 = launchpad.tokenURI(2);
+
+        console.log("--- Token URI 1 ---");
+        console.log(uri1);
+        
+        console.log("--- Token URI 2 ---");
+        console.log(uri2);
+    }
+    
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        return this.onERC721Received.selector;
+    }
+
+    receive() external payable {}
 }

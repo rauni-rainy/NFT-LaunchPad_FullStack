@@ -1,0 +1,13 @@
+# Compiler files
+cache/
+out/
+build/
+artifacts/
+
+# Node
+node_modules/
+dist/
+.env
+
+# General
+.DS_Store

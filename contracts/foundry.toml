@@ -1,0 +1,14 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+via = ["Base Sepolia Testnet url"]
+
+remappings = [
+    "erc721a/=lib/ERC721A/contracts/",
+    "@openzeppelin/=lib/openzeppelin-contracts/contracts/",
+    "@chainlink/=lib/chainlink-brownie-contracts/contracts/"
+]

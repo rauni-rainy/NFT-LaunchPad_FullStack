@@ -60,6 +60,8 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
     mapping(address => uint8) public wlMinted;
     mapping(address => uint8) public publicMinted;
     mapping(address => uint256) public referralRewards;
+    uint256 public totalReferralRewards;
+    bool public paused;
 
     // VRF Config
     VRFCoordinatorV2Interface private vrfCoordinator;
@@ -128,6 +130,53 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
         callbackGasLimit = limit;
     }
 
+    function setProvenanceHash(bytes32 hash) external onlyOwner {
+        if (provenanceSet) revert ProvenanceAlreadySet();
+        if (currentPhase != MintPhase.CLOSED) revert WrongPhase();
+        provenanceHash = hash;
+        provenanceSet = true;
+        emit ProvenanceSet(hash);
+    }
+
+    function withdraw() external onlyOwner nonReentrant {
+        uint256 available = address(this).balance - totalReferralRewards;
+        (bool ok, ) = payable(owner()).call{value: available}("");
+        if (!ok) revert TransferFailed();
+        emit Withdrawn(owner(), available);
+    }
+
+    function pause() external onlyOwner {
+        paused = true;
+    }
+
+    function unpause() external onlyOwner {
+        paused = false;
+    }
+
+    function setConfig(LaunchConfig calldata newConfig) external onlyOwner {
+        if (currentPhase != MintPhase.CLOSED) revert WrongPhase();
+        config = newConfig;
+    }
+
+    function setAirdrop(address[] calldata recipients, uint256[] calldata quantities) external onlyOwner {
+        uint256 totalQty = 0;
+        uint256 len = recipients.length;
+        require(len == quantities.length, "Mismatched arrays");
+        
+        for (uint256 i = 0; i < len; i++) {
+            totalQty += quantities[i];
+        }
+        if (totalSupply() + totalQty > config.maxSupply) revert MaxSupplyExceeded();
+        
+        for (uint256 i = 0; i < len; i++) {
+            _safeMint(recipients[i], quantities[i]);
+        }
+    }
+
+    function setRoyaltyInfo(address receiver, uint96 feeBps) external onlyOwner {
+        _setDefaultRoyalty(receiver, feeBps);
+    }
+
     // --- Admin Merkle Setup ---
 
     function setOgMerkleRoot(bytes32 root) external onlyOwner {
@@ -180,6 +229,7 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
     // --- Minting ---
 
     function mintOg(uint256 qty, bytes32[] calldata proof) external payable nonReentrant {
+        require(!paused, "Paused");
         if (currentPhase != MintPhase.OG) revert WrongPhase();
         if (!_verifyOg(msg.sender, proof)) revert InvalidProof();
         if (ogMinted[msg.sender] + qty > config.ogMaxPerWallet) revert MaxPerWalletExceeded();
@@ -200,6 +250,7 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
     }
 
     function mintWl(uint256 qty, bytes32[] calldata proof) external payable nonReentrant {
+        require(!paused, "Paused");
         if (currentPhase != MintPhase.ALLOWLIST) revert WrongPhase();
         if (!_verifyWl(msg.sender, proof)) revert InvalidProof();
         if (wlMinted[msg.sender] + qty > config.wlMaxPerWallet) revert MaxPerWalletExceeded();
@@ -220,6 +271,7 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
     }
 
     function mintPublic(uint256 qty) external payable nonReentrant {
+        require(!paused, "Paused");
         if (currentPhase != MintPhase.PUBLIC) revert WrongPhase();
         if (publicMinted[msg.sender] + qty > config.publicMaxPerWallet) revert MaxPerWalletExceeded();
         if (totalSupply() + qty > config.maxSupply) revert MaxSupplyExceeded();
@@ -239,6 +291,7 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
     }
 
     function mintWithReferral(uint256 qty, bytes32[] calldata proof, address referrer) external payable nonReentrant {
+        require(!paused, "Paused");
         if (currentPhase != MintPhase.ALLOWLIST) revert WrongPhase();
         if (!_verifyWl(msg.sender, proof)) revert InvalidProof();
         if (wlMinted[msg.sender] + qty > config.wlMaxPerWallet) revert MaxPerWalletExceeded();
@@ -252,6 +305,7 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
         if (referrer != address(0) && referrer != msg.sender) {
             uint256 reward = (config.wlPrice * qty * 5) / 100;
             referralRewards[referrer] += reward;
+            totalReferralRewards += reward;
             emit ReferralRewarded(referrer, msg.sender, reward);
         }
 
@@ -269,6 +323,7 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
         uint256 amount = referralRewards[msg.sender];
         require(amount > 0);
         referralRewards[msg.sender] = 0;
+        totalReferralRewards -= amount;
         
         (bool ok, ) = payable(msg.sender).call{value: amount}("");
         if (!ok) revert TransferFailed();
@@ -318,4 +373,6 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
         revealed = true;
         emit RevealFulfilled(randomOffset);
     }
+
+    receive() external payable {}
 }

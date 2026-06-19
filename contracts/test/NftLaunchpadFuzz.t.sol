@@ -32,7 +32,7 @@ contract NftLaunchpadFuzzTest is Test {
     bytes32[] public proofWl1;
 
     function setUp() public {
-        vrfCoordinator = new MockVRFCoordinator(0.1 ether, 1e9);
+        vrfCoordinator = new MockVRFCoordinator(0.1 ether, 1e9, 4e15);
         _setupMerkleTrees();
 
         INftLaunchpad.LaunchConfig memory config = INftLaunchpad.LaunchConfig({

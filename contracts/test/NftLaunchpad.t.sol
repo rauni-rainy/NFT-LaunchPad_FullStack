@@ -55,7 +55,7 @@ contract NftLaunchpadTest is Test {
         vm.label(wl1, "WL_1");
 
         // 1. Deploy Mock VRF
-        vrfCoordinator = new MockVRFCoordinator(0.1 ether, 1e9);
+        vrfCoordinator = new MockVRFCoordinator(0.1 ether, 1e9, 4e15);
 
         // 2. Setup Merkle Trees
         _setupMerkleTrees();

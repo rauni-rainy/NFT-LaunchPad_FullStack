@@ -3,17 +3,18 @@ pragma solidity 0.8.24;
 
 import "erc721a/ERC721A.sol";
 import "@openzeppelin/token/common/ERC2981.sol";
-import "@openzeppelin/access/Ownable2Step.sol";
+
 import "@openzeppelin/utils/ReentrancyGuard.sol";
 import "@openzeppelin/utils/cryptography/MerkleProof.sol";
-import "@chainlink/src/v0.8/vrf/VRFConsumerBaseV2.sol";
-import "@chainlink/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import "@chainlink/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
+import "@chainlink/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import "@openzeppelin/utils/Base64.sol";
 import "@openzeppelin/utils/Strings.sol";
 import "./interfaces/INftLaunchpad.sol";
 import "./svg/SvgGenerator.sol";
 
-contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFConsumerBaseV2, INftLaunchpad {
+contract NftLaunchpad is ERC721A, ERC2981, ReentrancyGuard, VRFConsumerBaseV2Plus, INftLaunchpad {
 
     /* =========================================================================
      *                              STORAGE LAYOUT
@@ -64,8 +65,8 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
     bool public paused;
 
     // VRF Config
-    VRFCoordinatorV2Interface private vrfCoordinator;
-    uint64 private subscriptionId;
+    IVRFCoordinatorV2Plus private vrfCoordinator;
+    uint256 private subscriptionId;
     bytes32 private keyHash;
     uint32 private callbackGasLimit;
     uint16 private requestConfirmations;
@@ -76,15 +77,15 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
         string memory symbol,
         LaunchConfig memory _config,
         address vrfCoordinatorAddress,
-        uint64 _subscriptionId,
+        uint256 _subscriptionId,
         bytes32 _keyHash,
         address _royaltyReceiver,
         uint96 _royaltyFeeBps
-    ) ERC721A(name, symbol) Ownable(msg.sender) VRFConsumerBaseV2(vrfCoordinatorAddress) {
+    ) ERC721A(name, symbol) VRFConsumerBaseV2Plus(vrfCoordinatorAddress) {
         config = _config;
         currentPhase = MintPhase.CLOSED;
         
-        vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorAddress);
+        vrfCoordinator = IVRFCoordinatorV2Plus(vrfCoordinatorAddress);
         subscriptionId = _subscriptionId;
         keyHash = _keyHash;
         
@@ -111,11 +112,14 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
         require(force || totalSupply() == config.maxSupply, "Not fully minted");
         
         uint256 requestId = vrfCoordinator.requestRandomWords(
-            keyHash,
-            subscriptionId,
-            requestConfirmations,
-            callbackGasLimit,
-            1
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: keyHash,
+                subId: subscriptionId,
+                requestConfirmations: requestConfirmations,
+                callbackGasLimit: callbackGasLimit,
+                numWords: 1,
+                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false}))
+            })
         );
         vrfRequestId = requestId;
         revealRequested = true;
@@ -368,7 +372,7 @@ contract NftLaunchpad is ERC721A, ERC2981, Ownable2Step, ReentrancyGuard, VRFCon
         return super.supportsInterface(interfaceId);
     }
 
-    function fulfillRandomWords(uint256 /* requestId */, uint256[] memory randomWords) internal override {
+    function fulfillRandomWords(uint256 /* requestId */, uint256[] calldata randomWords) internal override {
         randomOffset = randomWords[0] % config.maxSupply;
         revealed = true;
         emit RevealFulfilled(randomOffset);

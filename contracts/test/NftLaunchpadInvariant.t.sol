@@ -66,7 +66,7 @@ contract NftLaunchpadInvariantTest is Test {
     address public royaltyReceiver = address(0x2);
 
     function setUp() public {
-        vrfCoordinator = new MockVRFCoordinator(0.1 ether, 1e9);
+        vrfCoordinator = new MockVRFCoordinator(0.1 ether, 1e9, 4e15);
 
         INftLaunchpad.LaunchConfig memory config = INftLaunchpad.LaunchConfig({
             maxSupply: 100,

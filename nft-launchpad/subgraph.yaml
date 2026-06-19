@@ -1,0 +1,67 @@
+specVersion: 1.3.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: NftLaunchpad
+    network: sepolia
+    source:
+      address: "0xF6CFcFdA5D5C56892e7440064EF1033495Eb19Fc"
+      abi: NftLaunchpad
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Approval
+        - ApprovalForAll
+        - ConsecutiveTransfer
+        - CoordinatorSet
+        - Minted
+        - OwnershipTransferRequested
+        - OwnershipTransferred
+        - PhaseChanged
+        - ProvenanceSet
+        - ReferralRewarded
+        - RevealFulfilled
+        - RevealRequested
+        - RootUpdated
+        - Transfer
+        - Withdrawn
+      abis:
+        - name: NftLaunchpad
+          file: ./abis/NftLaunchpad.json
+      eventHandlers:
+        - event: Approval(indexed address,indexed address,indexed uint256)
+          handler: handleApproval
+        - event: ApprovalForAll(indexed address,indexed address,bool)
+          handler: handleApprovalForAll
+        - event: ConsecutiveTransfer(indexed uint256,uint256,indexed address,indexed address)
+          handler: handleConsecutiveTransfer
+        - event: CoordinatorSet(address)
+          handler: handleCoordinatorSet
+        - event: Minted(indexed address,indexed uint256,uint256,uint8)
+          handler: handleMinted
+        - event: OwnershipTransferRequested(indexed address,indexed address)
+          handler: handleOwnershipTransferRequested
+        - event: OwnershipTransferred(indexed address,indexed address)
+          handler: handleOwnershipTransferred
+        - event: PhaseChanged(uint8,uint8)
+          handler: handlePhaseChanged
+        - event: ProvenanceSet(bytes32)
+          handler: handleProvenanceSet
+        - event: ReferralRewarded(indexed address,indexed address,uint256)
+          handler: handleReferralRewarded
+        - event: RevealFulfilled(uint256)
+          handler: handleRevealFulfilled
+        - event: RevealRequested(uint256)
+          handler: handleRevealRequested
+        - event: RootUpdated(string,bytes32)
+          handler: handleRootUpdated
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleTransfer
+        - event: Withdrawn(indexed address,uint256)
+          handler: handleWithdrawn
+      file: ./src/nft-launchpad.ts

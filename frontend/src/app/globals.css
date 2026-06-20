@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-void: #070708;
+  --bg-surface: #0E0E10;
+  --bg-border: rgba(255, 255, 255, 0.07);
+  --text-primary: #F0EFE8;
+  --text-secondary: #5C5C66;
+  --text-tertiary: #38383F;
+  --accent-gold: #FFD08A;
+  --accent-rose: #E8A0CC;
+  --accent-violet: #B8A0FF;
+  --accent-blue: #82C4FF;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--bg-void);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+  line-height: 1.8;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Single-column editorial layout */
+.col { max-width: 660px; margin: 0 auto; padding: 0 24px; }
+
+/* Typography */
+.display { font-family: 'Syne', sans-serif; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+.heading { font-family: 'Syne', sans-serif; font-weight: 600; letter-spacing: -0.02em; }
+.mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+
+/* Divider */
+.rule { width: 100%; height: 1px; background: var(--bg-border); }
+
+/* Button system */
+.btn-outline {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255,255,255,0.25); background: transparent;
+  color: var(--text-primary); font-family: 'Syne', sans-serif;
+  font-size: 14px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 14px 32px; cursor: pointer; transition: all 0.2s ease;
+}
+.btn-outline:hover { background: var(--text-primary); color: var(--bg-void); }
+.btn-outline:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-outline.loading { border-color: rgba(184,160,255,0.4); color: var(--accent-violet); }
+
+/* Number input for quantity selector */
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }

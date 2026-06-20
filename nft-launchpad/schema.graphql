@@ -1,138 +1,43 @@
-type Approval @entity(immutable: true) {
-  id: Bytes!
-  owner: Bytes! # address
-  approved: Bytes! # address
-  tokenId: BigInt! # uint256
-  blockNumber: BigInt!
+type Mint @entity(immutable: true) {
+  id: ID!                          # tx hash + log index
+  tokenId: BigInt!
+  quantity: BigInt!
+  minter: Bytes!
+  phase: String!                   # "OG" | "ALLOWLIST" | "PUBLIC"
+  pricePerToken: BigInt!
+  totalPaid: BigInt!
+  referrer: Bytes                  # nullable
   blockTimestamp: BigInt!
-  transactionHash: Bytes!
+  blockNumber: BigInt!
 }
 
-type ApprovalForAll @entity(immutable: true) {
-  id: Bytes!
-  owner: Bytes! # address
-  operator: Bytes! # address
-  approved: Boolean! # bool
-  blockNumber: BigInt!
+type PhaseChange @entity(immutable: true) {
+  id: ID!
+  oldPhase: String!
+  newPhase: String!
   blockTimestamp: BigInt!
-  transactionHash: Bytes!
 }
 
-type ConsecutiveTransfer @entity(immutable: true) {
-  id: Bytes!
-  fromTokenId: BigInt! # uint256
-  toTokenId: BigInt! # uint256
-  from: Bytes! # address
-  to: Bytes! # address
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+type Referral @entity(immutable: false) {
+  id: ID!                          # referrer address (cumulative per referrer)
+  referrer: Bytes!
+  totalEarned: BigInt!
+  totalClaimed: BigInt!
+  pendingRewards: BigInt!
 }
 
-type CoordinatorSet @entity(immutable: true) {
-  id: Bytes!
-  vrfCoordinator: Bytes! # address
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+type DayMintStats @entity(immutable: false) {        # aggregated per day for the velocity chart
+  id: ID!                          # date string YYYY-MM-DD
+  date: String!
+  mintCount: BigInt!
+  revenue: BigInt!
+  uniqueMinters: BigInt!
 }
 
-type Minted @entity(immutable: true) {
-  id: Bytes!
-  to: Bytes! # address
-  tokenId: BigInt! # uint256
-  qty: BigInt! # uint256
-  phase: Int! # uint8
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type OwnershipTransferRequested @entity(immutable: true) {
-  id: Bytes!
-  from: Bytes! # address
-  to: Bytes! # address
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type OwnershipTransferred @entity(immutable: true) {
-  id: Bytes!
-  from: Bytes! # address
-  to: Bytes! # address
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type PhaseChanged @entity(immutable: true) {
-  id: Bytes!
-  oldPhase: Int! # uint8
-  newPhase: Int! # uint8
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type ProvenanceSet @entity(immutable: true) {
-  id: Bytes!
-  hash: Bytes! # bytes32
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type ReferralRewarded @entity(immutable: true) {
-  id: Bytes!
-  referrer: Bytes! # address
-  minter: Bytes! # address
-  amount: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type RevealFulfilled @entity(immutable: true) {
-  id: Bytes!
-  randomOffset: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type RevealRequested @entity(immutable: true) {
-  id: Bytes!
-  requestId: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type RootUpdated @entity(immutable: true) {
-  id: Bytes!
-  tier: String! # string
-  root: Bytes! # bytes32
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type Transfer @entity(immutable: true) {
-  id: Bytes!
-  from: Bytes! # address
-  to: Bytes! # address
-  tokenId: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type Withdrawn @entity(immutable: true) {
-  id: Bytes!
-  to: Bytes! # address
-  amount: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+type CollectionStats @entity(immutable: false) {     # singleton, id = "global"
+  id: ID!
+  totalMinted: BigInt!
+  totalRevenue: BigInt!
+  uniqueHolders: BigInt!
+  currentPhase: String!
 }

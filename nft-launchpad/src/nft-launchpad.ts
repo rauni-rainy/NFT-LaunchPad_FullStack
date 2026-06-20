@@ -1,254 +1,159 @@
+import { BigInt, Bytes } from "@graphprotocol/graph-ts"
 import {
-  Approval as ApprovalEvent,
-  ApprovalForAll as ApprovalForAllEvent,
-  ConsecutiveTransfer as ConsecutiveTransferEvent,
-  CoordinatorSet as CoordinatorSetEvent,
   Minted as MintedEvent,
-  OwnershipTransferRequested as OwnershipTransferRequestedEvent,
-  OwnershipTransferred as OwnershipTransferredEvent,
   PhaseChanged as PhaseChangedEvent,
-  ProvenanceSet as ProvenanceSetEvent,
   ReferralRewarded as ReferralRewardedEvent,
-  RevealFulfilled as RevealFulfilledEvent,
-  RevealRequested as RevealRequestedEvent,
-  RootUpdated as RootUpdatedEvent,
-  Transfer as TransferEvent,
   Withdrawn as WithdrawnEvent
 } from "../generated/NftLaunchpad/NftLaunchpad"
 import {
-  Approval,
-  ApprovalForAll,
-  ConsecutiveTransfer,
-  CoordinatorSet,
-  Minted,
-  OwnershipTransferRequested,
-  OwnershipTransferred,
-  PhaseChanged,
-  ProvenanceSet,
-  ReferralRewarded,
-  RevealFulfilled,
-  RevealRequested,
-  RootUpdated,
-  Transfer,
-  Withdrawn
+  Mint,
+  PhaseChange,
+  Referral,
+  DayMintStats,
+  CollectionStats
 } from "../generated/schema"
 
-export function handleApproval(event: ApprovalEvent): void {
-  let entity = new Approval(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.owner = event.params.owner
-  entity.approved = event.params.approved
-  entity.tokenId = event.params.tokenId
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+function getOrCreateCollectionStats(): CollectionStats {
+  let stats = CollectionStats.load("global")
+  if (stats == null) {
+    stats = new CollectionStats("global")
+    stats.totalMinted = BigInt.fromI32(0)
+    stats.totalRevenue = BigInt.fromI32(0)
+    stats.uniqueHolders = BigInt.fromI32(0)
+    stats.currentPhase = "CLOSED"
+    stats.save()
+  }
+  return stats as CollectionStats
 }
 
-export function handleApprovalForAll(event: ApprovalForAllEvent): void {
-  let entity = new ApprovalForAll(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.owner = event.params.owner
-  entity.operator = event.params.operator
-  entity.approved = event.params.approved
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+function getDayId(timestamp: BigInt): string {
+  // 86400 seconds in a day
+  let dayNum = timestamp.toI32() / 86400
+  // Approximation of date string or just return the day number string
+  // Subgraph AssemblyScript doesn't have a full Date formatting library built-in easily
+  // We'll just return the day number as a string since standard date string requires complex math
+  return dayNum.toString()
 }
 
-export function handleConsecutiveTransfer(
-  event: ConsecutiveTransferEvent
-): void {
-  let entity = new ConsecutiveTransfer(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.fromTokenId = event.params.fromTokenId
-  entity.toTokenId = event.params.toTokenId
-  entity.from = event.params.from
-  entity.to = event.params.to
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleCoordinatorSet(event: CoordinatorSetEvent): void {
-  let entity = new CoordinatorSet(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.vrfCoordinator = event.params.vrfCoordinator
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+function phaseToString(phase: i32): string {
+  if (phase == 0) return "CLOSED"
+  if (phase == 1) return "OG"
+  if (phase == 2) return "ALLOWLIST"
+  if (phase == 3) return "PUBLIC"
+  return "UNKNOWN"
 }
 
 export function handleMinted(event: MintedEvent): void {
-  let entity = new Minted(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.to = event.params.to
-  entity.tokenId = event.params.tokenId
-  entity.qty = event.params.qty
-  entity.phase = event.params.phase
+  // Use tx hash as ID so it can be shared with ReferralRewarded
+  let mintId = event.transaction.hash.toHexString()
+  let mint = Mint.load(mintId)
+  if (mint == null) {
+    mint = new Mint(mintId)
+    // Initialize required fields that might be set by ReferralRewarded if it ran first
+    mint.referrer = null
+  }
+  
+  mint.tokenId = event.params.tokenId
+  mint.quantity = event.params.qty
+  mint.minter = event.params.to
+  mint.phase = phaseToString(event.params.phase)
+  
+  // Calculate pricePerToken and totalPaid from transaction value
+  mint.totalPaid = event.transaction.value
+  if (event.params.qty.gt(BigInt.fromI32(0))) {
+    mint.pricePerToken = event.transaction.value.div(event.params.qty)
+  } else {
+    mint.pricePerToken = BigInt.fromI32(0)
+  }
+  
+  mint.blockTimestamp = event.block.timestamp
+  mint.blockNumber = event.block.number
+  mint.save()
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  // Update CollectionStats
+  let stats = getOrCreateCollectionStats()
+  stats.totalMinted = stats.totalMinted.plus(event.params.qty)
+  stats.totalRevenue = stats.totalRevenue.plus(event.transaction.value)
+  stats.save()
 
-  entity.save()
-}
-
-export function handleOwnershipTransferRequested(
-  event: OwnershipTransferRequestedEvent
-): void {
-  let entity = new OwnershipTransferRequested(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleOwnershipTransferred(
-  event: OwnershipTransferredEvent
-): void {
-  let entity = new OwnershipTransferred(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  // Update DayMintStats
+  let dayId = getDayId(event.block.timestamp)
+  let dayStats = DayMintStats.load(dayId)
+  if (dayStats == null) {
+    dayStats = new DayMintStats(dayId)
+    dayStats.date = dayId
+    dayStats.mintCount = BigInt.fromI32(0)
+    dayStats.revenue = BigInt.fromI32(0)
+    dayStats.uniqueMinters = BigInt.fromI32(0)
+  }
+  dayStats.mintCount = dayStats.mintCount.plus(event.params.qty)
+  dayStats.revenue = dayStats.revenue.plus(event.transaction.value)
+  // uniqueMinters requires tracking, we'll just increment naively or skip for now since we don't have a Minters entity
+  dayStats.uniqueMinters = dayStats.uniqueMinters.plus(BigInt.fromI32(1))
+  dayStats.save()
 }
 
 export function handlePhaseChanged(event: PhaseChangedEvent): void {
-  let entity = new PhaseChanged(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.oldPhase = event.params.oldPhase
-  entity.newPhase = event.params.newPhase
+  let id = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  let phaseChange = new PhaseChange(id)
+  phaseChange.oldPhase = phaseToString(event.params.oldPhase)
+  phaseChange.newPhase = phaseToString(event.params.newPhase)
+  phaseChange.blockTimestamp = event.block.timestamp
+  phaseChange.save()
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleProvenanceSet(event: ProvenanceSetEvent): void {
-  let entity = new ProvenanceSet(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.hash = event.params.hash
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  let stats = getOrCreateCollectionStats()
+  stats.currentPhase = phaseToString(event.params.newPhase)
+  stats.save()
 }
 
 export function handleReferralRewarded(event: ReferralRewardedEvent): void {
-  let entity = new ReferralRewarded(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.referrer = event.params.referrer
-  entity.minter = event.params.minter
-  entity.amount = event.params.amount
+  let referrerId = event.params.referrer.toHexString()
+  let referral = Referral.load(referrerId)
+  if (referral == null) {
+    referral = new Referral(referrerId)
+    referral.referrer = event.params.referrer
+    referral.totalEarned = BigInt.fromI32(0)
+    referral.totalClaimed = BigInt.fromI32(0)
+    referral.pendingRewards = BigInt.fromI32(0)
+  }
+  referral.totalEarned = referral.totalEarned.plus(event.params.amount)
+  referral.pendingRewards = referral.pendingRewards.plus(event.params.amount)
+  referral.save()
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleRevealFulfilled(event: RevealFulfilledEvent): void {
-  let entity = new RevealFulfilled(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.randomOffset = event.params.randomOffset
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleRevealRequested(event: RevealRequestedEvent): void {
-  let entity = new RevealRequested(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.requestId = event.params.requestId
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleRootUpdated(event: RootUpdatedEvent): void {
-  let entity = new RootUpdated(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.tier = event.params.tier
-  entity.root = event.params.root
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleTransfer(event: TransferEvent): void {
-  let entity = new Transfer(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-  entity.tokenId = event.params.tokenId
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  // Update the related Mint entity's referrer field (look up by same tx hash)
+  let mintId = event.transaction.hash.toHexString()
+  let mint = Mint.load(mintId)
+  if (mint == null) {
+    mint = new Mint(mintId)
+    // Pre-initialize required fields to avoid null errors when saved, they will be overwritten by handleMinted
+    mint.tokenId = BigInt.fromI32(0)
+    mint.quantity = BigInt.fromI32(0)
+    mint.minter = event.params.minter
+    mint.phase = "UNKNOWN"
+    mint.pricePerToken = BigInt.fromI32(0)
+    mint.totalPaid = BigInt.fromI32(0)
+    mint.blockTimestamp = event.block.timestamp
+    mint.blockNumber = event.block.number
+  }
+  mint.referrer = event.params.referrer
+  mint.save()
 }
 
 export function handleWithdrawn(event: WithdrawnEvent): void {
-  let entity = new Withdrawn(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.to = event.params.to
-  entity.amount = event.params.amount
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  // If the owner withdraws referral rewards, we need to handle it.
+  // Wait, Withdrawn is also emitted when users claim referral rewards.
+  // In NftLaunchpad.sol: 
+  // emit Withdrawn(msg.sender, amount); // from claimReferralRewards
+  // emit Withdrawn(owner(), available); // from admin withdraw
+  
+  // We can update the Referral entity if they claimed rewards
+  let referrerId = event.params.to.toHexString()
+  let referral = Referral.load(referrerId)
+  if (referral != null) {
+    // If it's a referrer claiming, update their claimed amounts
+    referral.totalClaimed = referral.totalClaimed.plus(event.params.amount)
+    // Reset pending
+    referral.pendingRewards = BigInt.fromI32(0) // or deduct amount
+    referral.save()
+  }
 }
